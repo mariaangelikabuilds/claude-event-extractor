@@ -5,7 +5,6 @@ import naive_baseline
 
 QUERY = "AI and machine learning conferences in Singapore in Q3 2026"
 
-# Sonnet 4.6 pricing per 1M tokens (verified at platform.claude.com/docs on 2026-04-30)
 INPUT_COST_PER_M = 3.00
 OUTPUT_COST_PER_M = 15.00
 COST_PER_SEARCH = 0.01  # $10 / 1k searches
@@ -23,7 +22,6 @@ def main() -> None:
     print(f"QUERY: {QUERY!r}")
 
     # Two-call first (light) so naive's heavier run can't starve it for tokens.
-    # If two-call fails, surface immediately rather than continuing to naive.
     try:
         two = extractor.get_events(QUERY)
     except Exception as e:

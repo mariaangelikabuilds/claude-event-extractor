@@ -1,8 +1,4 @@
-"""Single-call anti-pattern: web_search + JSON-via-prompt in one shot.
-
-Deliberately wrong on purpose to demonstrate the failure mode the client described:
-unbounded searches, JSON requested via prose, no validation, no structure enforcement.
-"""
+"""Single-call anti-pattern: web_search + JSON-via-prompt in one shot."""
 import json
 import re
 from anthropic import Anthropic
@@ -13,9 +9,6 @@ load_dotenv()
 MODEL = "claude-sonnet-4-6"
 client = Anthropic(max_retries=8)
 
-# This is intentionally the WRONG way to do it. Real Upwork posts in this category
-# include language like "search the web and return JSON". No max_uses cap, no
-# tool_choice, contract enforced via prose. That is the failure mode under test.
 NAIVE_SYSTEM = (
     "You are an event database scraper. Search the web for matching events and "
     "respond ONLY with valid JSON matching this exact structure: "
@@ -42,7 +35,6 @@ def get_events(query: str) -> dict:
     print(f"[naive] in={usage['input']} out={usage['output']} searches={usage['searches']}")
 
     text = "\n".join(b.text for b in response.content if b.type == "text").strip()
-    # Strip markdown fences if Claude added them despite instructions
     text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.MULTILINE).strip()
 
     try:

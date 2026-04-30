@@ -1,8 +1,4 @@
-"""Two-call pattern: bounded search, then forced structured extraction.
-
-Verified against https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
-on 2026-04-30. web_search_20260209 is current; runs in basic mode without code_execution.
-"""
+"""Two-call pattern: bounded search, then forced structured extraction."""
 from anthropic import Anthropic
 from dotenv import load_dotenv
 from pydantic import ValidationError
@@ -12,7 +8,6 @@ from schemas import EventList, EXTRACT_TOOL_SCHEMA
 load_dotenv()
 
 MODEL = "claude-sonnet-4-6"
-# Generous retries so rate-limit hiccups self-heal during the demo
 client = Anthropic(max_retries=8)
 
 
