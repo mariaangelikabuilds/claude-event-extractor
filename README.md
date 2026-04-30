@@ -1,58 +1,98 @@
-# The two-call pattern for Claude API event extraction
+# claude-event-extractor
 
-A small demo showing why `web_search` + JSON-via-prompt in a single call burns
-tokens and produces unreliable JSON, and how splitting it into two calls fixes
-both problems.
+A working demo of the **two-call pattern** for extracting structured event data
+from web searches with the Claude API, without the token blowup and unreliable
+JSON that plagues naive single-call implementations.
 
-## The problem
+## The problem this solves
 
-A single-call extractor that asks Claude to "search the web AND respond with JSON
-matching this structure" loses on three fronts at once. The search tool runs as
-many times as Claude wants because there is no `max_uses` cap, the model decides
-on its own when "thorough" is thorough enough, and the JSON contract is enforced
-only by prose instructions in the system prompt, so the response often arrives
-wrapped in a prose preamble, fenced in ` ```json ` blocks, or with a trailing
-sentence Claude added to be helpful. None of that is the model's fault. It is
-the prompt asking one model turn to do two jobs.
+Most teams wiring up Claude with web search for data extraction do it like
+this:
+
+> One Claude call. `web_search` enabled. System prompt says "respond ONLY with
+> valid JSON matching this schema."
+
+That fails predictably:
+
+- Claude loops the search tool 4-6+ times because it can't decide when it has
+  "enough"
+- JSON output is forced via prompt instructions, so it's inconsistent and
+  frequently malformed
+- Token usage is 2-3x what it needs to be
+- No validation layer, so hallucinated fields land in your database
+
+*None of that is the model's fault. It is the prompt asking one model turn to do two jobs.*
 
 ## The fix
 
-Split the work. **Call 1** runs `web_search` with `max_uses: 2` and a system
-prompt that asks for a concise plain-text synthesis. **Call 2** has no web tools
-at all, just a single custom tool whose `input_schema` is the event shape, with
-`tool_choice` set to `{"type": "tool", "name": "extract_events"}` to force
-Claude through the schema. The tool input is then validated against a Pydantic
-model. Search and extraction are now independently bounded, independently
-debuggable, and independently retriable.
+Split the work into two calls. Each does one thing well.
 
-## The result
+**Call 1: bounded search.** Claude with `web_search`, capped at 2 uses, system
+prompt says "synthesize and stop." Returns plain text findings.
 
-On the demo query, the two-call pattern uses ~50-70% fewer total tokens than
-the naive baseline (a recent run measured 68.9%), runs at most 2 searches
-instead of 6-14, and returns deterministic, schema-validated JSON every time.
-The naive baseline's JSON parses successfully on some runs and fails on others
-because it depends on whether Claude wrapped the response in a prose preamble
-or a ` ```json ` fence. Run `compare.py` to see the numbers on your own key.
+**Call 2: forced extraction.** Claude with no web access. A `tool_use` schema
+*is* the JSON contract. `tool_choice` forces Claude to call that tool. Output
+is validated with Pydantic before it leaves the function.
+
+Result: ~50% fewer tokens, deterministic JSON, validated output.
 
 ## Quick start
 
 ```bash
+git clone https://github.com/mariaangelikabuilds/claude-event-extractor
+cd claude-event-extractor
 pip install -r requirements.txt
-cp .env.example .env   # then paste your key
+cp .env.example .env   # paste your ANTHROPIC_API_KEY
 python compare.py
 ```
 
+`compare.py` runs both the naive baseline and the two-call pattern on the same
+query and prints a side-by-side token, cost, and reliability comparison.
+
+## Configuration
+
+Everything below is a one-line change. No hidden config, no YAML.
+
+| What                | Where                                                         | Default                                  |
+| ------------------- | ------------------------------------------------------------- | ---------------------------------------- |
+| The search query    | `QUERY` in `compare.py`                                       | AI/ML conferences in Singapore Q3 2026   |
+| Model               | `MODEL` in `extractor.py` and `naive_baseline.py`             | `claude-sonnet-4-6`                      |
+| Search cap          | `max_uses` in `extractor.search()`                            | `2`                                      |
+| Output schema       | `Event` and `EXTRACT_TOOL_SCHEMA` in `schemas.py`             | event-shaped (name, date, location, ...) |
+| Pricing (cost calc) | `INPUT_COST_PER_M`, `OUTPUT_COST_PER_M`, `COST_PER_SEARCH` in `compare.py` | Sonnet 4.6 list pricing       |
+| Per-call max tokens | `max_tokens=` arguments in `extractor.search` / `extract`     | `4096` / `2048`                          |
+| SDK retries         | `Anthropic(max_retries=...)` in both extractors               | `8`                                      |
+
+Adapting this to a different domain (products, places, papers, jobs, talent
+profiles) is mostly a matter of editing `schemas.py` and pointing the query at
+data relevant to your use case. The two-call structure stays the same.
+
+> **Note on rate limits.** The default Sonnet 4.6 tier is 30K input
+> tokens/minute. The naive baseline alone can spike to 200K+ in a single run,
+> which depletes the per-minute bucket. `compare.py` runs the two-call pattern
+> first and sleeps 60s before naive to give the bucket room to refill. If you
+> hit `429` errors back-to-back, wait a few minutes and try again, or raise
+> your tier.
+
 ## Files
 
-- `extractor.py`: the two-call pattern (the fix)
-- `naive_baseline.py`: single-call anti-pattern for comparison
-- `schemas.py`: Pydantic models + tool input schema
-- `compare.py`: runs both, prints token / cost / reliability diff
+- `extractor.py`: the two-call pattern
+- `naive_baseline.py`: the anti-pattern, for comparison
+- `compare.py`: runs both, prints the diff
+- `schemas.py`: Pydantic models + JSON tool schema
 
-Built against `anthropic>=0.88.0`, Pydantic v2, and the `web_search_20260209`
-tool version. Sonnet 4.6 throughout. Pricing reflects Sonnet 4.6 list prices as
-of 2026-04-30 plus the `$10 / 1k searches` web search charge.
+## Why this matters
+
+Token cost compounds fast in production. A 50% token reduction on 10,000
+events/month at current Sonnet pricing is real money. More importantly,
+deterministic JSON means your downstream pipeline (database writes, dashboards,
+alerting) stops breaking on malformed output.
 
 ## License
 
-MIT
+MIT.
+
+---
+
+Built by [Maria Angelika Agutaya](https://github.com/mariaangelikabuilds),
+Product Engineer working on Claude API integrations and MCP servers.
