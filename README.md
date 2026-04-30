@@ -1,8 +1,9 @@
 # claude-event-extractor
 
 A working demo of the **two-call pattern** for extracting structured event data
-from web searches with the Claude API, without the token blowup and unreliable
-JSON that plagues naive single-call implementations.
+from web searches with the Claude API. Measured **68.9% token reduction** over
+the naive single-call approach on the same query, with deterministic JSON
+validation.
 
 ## The problem this solves
 
@@ -34,7 +35,10 @@ prompt says "synthesize and stop." Returns plain text findings.
 *is* the JSON contract. `tool_choice` forces Claude to call that tool. Output
 is validated with Pydantic before it leaves the function.
 
-Result: ~50% fewer tokens, deterministic JSON, validated output.
+Result on the demo query: **68.9% fewer total tokens** (70,599 input + 1,919
+output for two-call vs. 229,821 + 3,002 for naive), search rounds dropped from
+12 to 2, and JSON validity went from 0/1 to 1/1. Run `compare.py` to reproduce
+the numbers on your own key.
 
 ## Quick start
 
@@ -83,10 +87,11 @@ data relevant to your use case. The two-call structure stays the same.
 
 ## Why this matters
 
-Token cost compounds fast in production. A 50% token reduction on 10,000
-events/month at current Sonnet pricing is real money. More importantly,
-deterministic JSON means your downstream pipeline (database writes, dashboards,
-alerting) stops breaking on malformed output.
+Token cost compounds fast in production. The measured run cost $0.85 per query
+naive vs. $0.26 two-call. At 10,000 queries/month that is **$5,900/month
+saved**, or roughly $70K/year. More importantly, deterministic JSON means your
+downstream pipeline (database writes, dashboards, alerting) stops breaking on
+malformed output, which is the kind of bug that doesn't show up until 3am.
 
 ## License
 
